@@ -4,6 +4,7 @@
 #include "pb.h"
 #include "pb_encode.h"
 #include "pb_decode.h"
+#include <reent.h>
 #include <stdint.h>
 #include <stdio.h>
 #include "esp_timer.h"
@@ -14,6 +15,10 @@
 #include "sparkplug_b.pb.h"
 #include "wifi_helper.h"
 #include "mqtt_helper.h"
+#include "simple_SNTP.h"
+#include <sys/time.h>
+
+ntp_time ntp = {};
 
 bool encode_name(pb_ostream_t *stream, const pb_field_t *field, void * const *arg){
     ESP_LOGI("ENCODE", "name");
@@ -46,10 +51,13 @@ size_t message_length;
 int message_init(void){
     pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
 
+    time_t now;
+    time(&now);
+
     org_eclipse_tahu_protobuf_Payload_Metric metric = {
         .is_null = false,
         .has_timestamp = true,
-        .timestamp = 123456789,
+        .timestamp = now,
         .datatype = org_eclipse_tahu_protobuf_DataType_Int32,
         .value.int_value = 923765,
         .name.arg = "Node Control/Rebirth",
@@ -61,11 +69,12 @@ int message_init(void){
     };
 
 
+    time(&now);
     org_eclipse_tahu_protobuf_Payload payload = {
         .metrics.arg = &metric,
         .metrics.funcs.encode = &encode_metrics,
         .has_timestamp = 1,
-        .timestamp = 1334566678,
+        .timestamp = now,
         .seq = 0,
         .has_seq = 1,
     };
@@ -90,6 +99,8 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
     switch (event_id) {
         case MQTT_EVENT_CONNECTED:
             // esp_mqtt_client_subscribe(client, in_topic, 0);
+            sntp_service_init(&ntp);
+            ESP_LOGI("ENCODE", "%d", message_init());
             esp_mqtt_client_publish(client, "spBv1.0/NBIRTH", (const char*)&buffer, message_length, 2, 0);
             break;
 
@@ -109,15 +120,15 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
 
 void app_main() {
     nvs_flash_init();
-    wifi_init("duck sicker", "headbanger");
-    ESP_LOGI("ENCODE", "%d", message_init());
+    wifi_init("HCTL", "123456789HCTL");
+
     ESP_LOGE("ENCODE", "%s", (char*)buffer);
 
     for(;;){
-        for (size_t i = 0; i < message_length; i++) {
-            printf("%02X ", buffer[i]);
-        }
-        printf("\n");
+        // for (size_t i = 0; i < message_length; i++) {
+        //     printf("%02X ", buffer[i]);
+        // }
+        // printf("\n");
         vTaskDelay(2000 / portTICK_PERIOD_MS);
     }
 }

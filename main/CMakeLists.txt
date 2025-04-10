@@ -6,6 +6,7 @@ idf_component_register(
             "pb_common.c"
             "mqtt_helper.c"
             "wifi_helper.c"
+            "simple_SNTP.c"
     INCLUDE_DIRS "."
 )
 
