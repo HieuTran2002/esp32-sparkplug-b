@@ -9,7 +9,7 @@
 
 void sntp_service_init(ntp_time* ntp_time){
     static char* SNTP = "SNTP_INIT";
-    esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
+    esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG("time.google.com");
     esp_netif_sntp_init(&config);
     esp_netif_sntp_start();
 

@@ -17,10 +17,10 @@
 #include "wifi_helper.h"
 #include "mqtt_helper.h"
 #include "simple_SNTP.h"
+#include <stdlib.h>
 #include <sys/time.h>
 
 ntp_time ntp = {};
-
 
 uint8_t buffer[255];  // Output buf
 size_t message_length;
@@ -31,7 +31,19 @@ int message_init(void){
     time_t now;
     time(&now);
 
-    org_eclipse_tahu_protobuf_Payload_Metric rebirth = {
+    Metrics *metrics = malloc(sizeof(Metrics));
+    if (!metrics) return false;
+
+    metrics->size = 3;
+    metrics->metrics = malloc(sizeof(sparkplug_payload_metric) * metrics->size);
+    if (!metrics->metrics) {
+        free(metrics);
+        return false;
+    }
+
+
+    ESP_LOGI("ENCODE", "START");
+    metrics->metrics[0] = (sparkplug_payload_metric){
         .is_null = false,
         .has_timestamp = true,
         .timestamp = now,
@@ -43,7 +55,7 @@ int message_init(void){
         .has_datatype = true,
     };
 
-    org_eclipse_tahu_protobuf_Payload_Metric bdSeq = {
+    metrics->metrics[1] = (sparkplug_payload_metric){
         .is_null = false,
         .has_timestamp = true,
         .timestamp = now,
@@ -55,7 +67,7 @@ int message_init(void){
         .has_datatype = true,
     };
 
-    org_eclipse_tahu_protobuf_Payload_Metric hw_model = {
+    metrics->metrics[2] = (sparkplug_payload_metric){
         .is_null = false,
         .has_timestamp = true,
         .timestamp = now,
@@ -67,17 +79,10 @@ int message_init(void){
         .which_value = org_eclipse_tahu_protobuf_Payload_Metric_string_value_tag,
         .has_datatype = true,
     };
-
-    Metrics metrics = {
-        .size = 3,
-    };
-    metrics.metrics[0] = rebirth;
-    metrics.metrics[1] = bdSeq;
-    metrics.metrics[2] = hw_model;
+    ESP_LOGI("ENCODE", "DONE");
 
     org_eclipse_tahu_protobuf_Payload payload = {
-        .metrics.arg = &metrics,
-        //.metrics.arg = &metric,
+        .metrics.arg = metrics,
         .metrics.funcs.encode = &encode_metrics,
         .has_timestamp = 1,
         .timestamp = now,
@@ -89,6 +94,9 @@ int message_init(void){
     if(!pb_encode(&stream, org_eclipse_tahu_protobuf_Payload_fields, &payload)){
         return false;
     }
+
+    free(metrics->metrics);
+    free(metrics);
 
     message_length = stream.bytes_written;
     ESP_LOGI("SETUP", "ALL DONE");
@@ -105,7 +113,7 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
         case MQTT_EVENT_CONNECTED:
             sntp_service_init(&ntp);
             ESP_LOGI("ENCODE", "%d", message_init());
-            esp_mqtt_client_publish(client, "spBv1.0/NBIRTH", (const char*)&buffer, message_length, 2, 0);
+            esp_mqtt_client_publish(client, "spBv1.0/NBIRTH", (const char*)buffer, message_length, 2, 0);
             break;
 
         case MQTT_EVENT_SUBSCRIBED:
@@ -124,9 +132,8 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
 
 void app_main() {
     nvs_flash_init();
-    wifi_init("HCTL", "123456789HCTL");
-
-    ESP_LOGE("ENCODE", "%s", (char*)buffer);
+    // wifi_init("HCTL", "123456789HCTL");
+    wifi_init("cornhub", "headbanger");
 
     for(;;){
         vTaskDelay(2000 / portTICK_PERIOD_MS);

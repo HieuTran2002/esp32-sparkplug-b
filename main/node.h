@@ -8,9 +8,14 @@
 #define sparkplug_payload_metric org_eclipse_tahu_protobuf_Payload_Metric
 #define sparkplug_payload org_eclipse_tahu_protobuf_Payload
 
+typedef struct{
+    size_t size;
+    sparkplug_payload_metric *metrics;
+} Metrics;
+
 typedef struct {
     const char* deviceID;
-    sparkplug_payload metrics[];
+    Metrics *metrics;
 } sp_device;
 
 typedef struct {
@@ -18,13 +23,9 @@ typedef struct {
     const char* nodeID;
     int seq;
     int bdseq;
+    Metrics *metrics;
     sp_device devices[];
 } sp_node;
-
-typedef struct{
-    size_t size;
-    org_eclipse_tahu_protobuf_Payload_Metric metrics[];
-} Metrics;
 
 bool encode_string(pb_ostream_t *stream, const pb_field_t *field, void * const *arg);
 bool encode_metrics(pb_ostream_t *stream, const pb_field_t *field, void * const *arg);

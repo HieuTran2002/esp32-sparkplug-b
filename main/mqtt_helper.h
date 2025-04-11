@@ -16,7 +16,6 @@ typedef struct{
 
 } MQTT_Broker_Address_t;
 
-static const char *MQTT_TAG = "mqtt";
 void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data);
 void mqtt_init();
 #endif /* end of include guard: MQTT_HELPER_H */
