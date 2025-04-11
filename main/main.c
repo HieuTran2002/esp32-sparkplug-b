@@ -1,6 +1,7 @@
 #include "esp_log_level.h"
 #include "freertos/idf_additions.h"
 #include "mqtt_client.h"
+#include "node.h"
 #include "pb.h"
 #include "pb_encode.h"
 #include "pb_decode.h"
@@ -20,58 +21,63 @@
 
 ntp_time ntp = {};
 
-bool encode_name(pb_ostream_t *stream, const pb_field_t *field, void * const *arg){
-    ESP_LOGI("ENCODE", "name");
-    char* string = (char*)*arg;
-    
-    if (!pb_encode_tag_for_field(stream, field)) return false;
-    if (!pb_encode_string(stream, (uint8_t*)string, strlen(string))) return false;
-
-    ESP_LOGI("ENCODE", "name done");
-    return true;
-}
-
-bool encode_metrics(pb_ostream_t *stream, const pb_field_t *field, void * const *arg){
-    ESP_LOGI("ENCODE", "metrics");
-
-    org_eclipse_tahu_protobuf_Payload_Metric *metric = (org_eclipse_tahu_protobuf_Payload_Metric*)*arg;
-
-    if (!pb_encode_tag_for_field(stream, field)) return false;
-
-
-    if(!pb_encode_submessage(stream, org_eclipse_tahu_protobuf_Payload_Metric_fields, metric)){
-        return false;
-    }
-    ESP_LOGI("ENCODE", "metrics done");
-    return true;
-}
 
 uint8_t buffer[255];  // Output buf
 size_t message_length;
+
 int message_init(void){
     pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
 
     time_t now;
     time(&now);
 
-    org_eclipse_tahu_protobuf_Payload_Metric metric = {
+    org_eclipse_tahu_protobuf_Payload_Metric rebirth = {
+        .is_null = false,
+        .has_timestamp = true,
+        .timestamp = now,
+        .datatype = org_eclipse_tahu_protobuf_DataType_Boolean,
+        .value.boolean_value = 0,
+        .name.arg = "Node Control/Rebirth",
+        .name.funcs.encode = &encode_string,
+        .which_value = org_eclipse_tahu_protobuf_Payload_Metric_boolean_value_tag,
+        .has_datatype = true,
+    };
+
+    org_eclipse_tahu_protobuf_Payload_Metric bdSeq = {
         .is_null = false,
         .has_timestamp = true,
         .timestamp = now,
         .datatype = org_eclipse_tahu_protobuf_DataType_Int32,
-        .value.int_value = 923765,
-        .name.arg = "Node Control/Rebirth",
-        .name.funcs.encode = &encode_name,
+        .value.int_value = 0,
+        .name.arg = "bdSeq",
+        .name.funcs.encode = &encode_string,
         .which_value = org_eclipse_tahu_protobuf_Payload_Metric_int_value_tag,
         .has_datatype = true,
-        .has_alias = 1,
-        .alias = 0,
     };
 
+    org_eclipse_tahu_protobuf_Payload_Metric hw_model = {
+        .is_null = false,
+        .has_timestamp = true,
+        .timestamp = now,
+        .datatype = org_eclipse_tahu_protobuf_DataType_String,
+        .value.string_value.arg = "ESP32C6",
+        .value.string_value.funcs.encode = &encode_string,
+        .name.arg = "Properties/Hardware Model",
+        .name.funcs.encode = &encode_string,
+        .which_value = org_eclipse_tahu_protobuf_Payload_Metric_string_value_tag,
+        .has_datatype = true,
+    };
 
-    time(&now);
+    Metrics metrics = {
+        .size = 3,
+    };
+    metrics.metrics[0] = rebirth;
+    metrics.metrics[1] = bdSeq;
+    metrics.metrics[2] = hw_model;
+
     org_eclipse_tahu_protobuf_Payload payload = {
-        .metrics.arg = &metric,
+        .metrics.arg = &metrics,
+        //.metrics.arg = &metric,
         .metrics.funcs.encode = &encode_metrics,
         .has_timestamp = 1,
         .timestamp = now,
@@ -94,11 +100,9 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
 {
     esp_mqtt_event_handle_t event = event_data;
     esp_mqtt_client_handle_t client = event->client;
-    static const char* MQTT_TAG = "MQTT";
 
     switch (event_id) {
         case MQTT_EVENT_CONNECTED:
-            // esp_mqtt_client_subscribe(client, in_topic, 0);
             sntp_service_init(&ntp);
             ESP_LOGI("ENCODE", "%d", message_init());
             esp_mqtt_client_publish(client, "spBv1.0/NBIRTH", (const char*)&buffer, message_length, 2, 0);
@@ -109,7 +113,7 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
             break;
 
         case MQTT_EVENT_PUBLISHED:
-            ESP_LOGI("PUB", "MQTT_EVENT_PUBLISHED");
+            ESP_LOGI("PUB", "MQTT_EVENT_PUBLISHED, msg_id=%d", event->msg_id);
             break;
 
         case MQTT_EVENT_DATA:
@@ -125,11 +129,6 @@ void app_main() {
     ESP_LOGE("ENCODE", "%s", (char*)buffer);
 
     for(;;){
-        // for (size_t i = 0; i < message_length; i++) {
-        //     printf("%02X ", buffer[i]);
-        // }
-        // printf("\n");
         vTaskDelay(2000 / portTICK_PERIOD_MS);
     }
 }
-
