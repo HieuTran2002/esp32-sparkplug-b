@@ -25,25 +25,31 @@ ntp_time ntp = {};
 uint8_t buffer[255];  // Output buf
 size_t message_length;
 
+// Tag for print debugging;
+#define PB_ENCODE "PB_ENCODE"
+
+Metrics* Create_Metrics(uint8_t _capacity){
+    Metrics *m = (Metrics*)malloc(sizeof(Metrics));
+    if(!m) return NULL;
+    m->capacity = _capacity;
+    m->metrics = (sparkplug_payload_metric*)malloc(sizeof(sparkplug_payload_metric) * _capacity);
+    if(!m->metrics) return NULL;
+    return m;
+}
+
 int message_init(void){
     pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
 
     time_t now;
     time(&now);
 
-    Metrics *metrics = malloc(sizeof(Metrics));
-    if (!metrics) return false;
+    Metrics *metrics = Create_Metrics(2);
+    metrics->used = 0;
+    if(!metrics) return false;
 
-    metrics->size = 3;
-    metrics->metrics = malloc(sizeof(sparkplug_payload_metric) * metrics->size);
-    if (!metrics->metrics) {
-        free(metrics);
-        return false;
-    }
+    sparkplug_payload_metric *birth = add_metric(metrics);
 
-
-    ESP_LOGI("ENCODE", "START");
-    metrics->metrics[0] = (sparkplug_payload_metric){
+    *birth = (sparkplug_payload_metric){
         .is_null = false,
         .has_timestamp = true,
         .timestamp = now,
@@ -55,7 +61,8 @@ int message_init(void){
         .has_datatype = true,
     };
 
-    metrics->metrics[1] = (sparkplug_payload_metric){
+    sparkplug_payload_metric *bdseq = add_metric(metrics);
+    *bdseq = (sparkplug_payload_metric){
         .is_null = false,
         .has_timestamp = true,
         .timestamp = now,
@@ -67,7 +74,8 @@ int message_init(void){
         .has_datatype = true,
     };
 
-    metrics->metrics[2] = (sparkplug_payload_metric){
+    sparkplug_payload_metric *hw_model = add_metric(metrics);
+    *hw_model = (sparkplug_payload_metric){
         .is_null = false,
         .has_timestamp = true,
         .timestamp = now,
@@ -79,7 +87,8 @@ int message_init(void){
         .which_value = org_eclipse_tahu_protobuf_Payload_Metric_string_value_tag,
         .has_datatype = true,
     };
-    ESP_LOGI("ENCODE", "DONE");
+
+    ESP_LOGI("ENCODE", "START %d", metrics->used);
 
     org_eclipse_tahu_protobuf_Payload payload = {
         .metrics.arg = metrics,
@@ -90,17 +99,14 @@ int message_init(void){
         .has_seq = 1,
     };
 
-    ESP_LOGI("SETUP", "Initial");
     if(!pb_encode(&stream, org_eclipse_tahu_protobuf_Payload_fields, &payload)){
         return false;
     }
 
-    free(metrics->metrics);
-    free(metrics);
-
     message_length = stream.bytes_written;
-    ESP_LOGI("SETUP", "ALL DONE");
-    printf("Encoded message size: %zu bytes\n", stream.bytes_written);
+    ESP_LOGE(PB_ENCODE, "Encoded  %zu -> %zu bytes", sizeof(*metrics->metrics), stream.bytes_written);
+
+    free_metrics(metrics);
     return true;
 }
 
@@ -132,8 +138,7 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
 
 void app_main() {
     nvs_flash_init();
-    // wifi_init("HCTL", "123456789HCTL");
-    wifi_init("cornhub", "headbanger");
+    wifi_init("HCTL", "123456789HCTL");
 
     for(;;){
         vTaskDelay(2000 / portTICK_PERIOD_MS);
