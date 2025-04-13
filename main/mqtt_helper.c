@@ -5,7 +5,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-char* topic = NULL;
 void trigger_extra_on_data_event(void* event_data);
 
 void mqtt_init(){
@@ -13,7 +12,7 @@ void mqtt_init(){
 
     // Convert esp_ip4_addr_t to char*
 
-    sprintf(result,"mqtt://%s:%d", "192.168.0.109", 1883);
+    sprintf(result,"mqtt://%s:%d", "192.168.1.86", 1883);
     const esp_mqtt_client_config_t mqtt_cfg = {
         .broker.address.uri = result,
         .credentials.client_id = "theid",

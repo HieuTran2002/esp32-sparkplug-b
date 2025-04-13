@@ -1,38 +1,69 @@
 #ifndef NODE_H
 #define NODE_H
 
-#include "sparkplug_b.pb.h"
-#include <stdint.h>
+#include "mqtt_client.h"
+#include "payload.h"
+#include <time.h>
 
-#define METRICS_GROWTH_RATE 4
-#define NAMESPACE "spBv1.0"
 
-#define sparkplug_payload_metric org_eclipse_tahu_protobuf_Payload_Metric
-#define sparkplug_payload org_eclipse_tahu_protobuf_Payload
+typedef enum {
+    NCMD_UNKNOWN = 0,
+    NCMD_REBIRTH,
+    NCMD_REBOOT,
+    NCMD_NEXT_SERVER,
+    NCMD_SCAN_DEVICES,
+    NCMD_SCAN_RATE,
+    NCMD_DIAGNOSTICS,
+    NCMD_ADD_METRIC,
+    NCMD_REMOVE_METRIC,
+    NCMD_COUNT  // useful for bounds checking
+} NCMDType;
 
-typedef struct{
-    uint8_t used;
-    uint8_t capacity;
-    uint8_t auto_expand;
-    sparkplug_payload_metric *metrics;
-} Metrics;
+typedef enum {
+    MESSAGE_TYPE_UNKNOW = 0,
+    NBIRTH,
+    DBIRTH,
+    NDATA,
+    DDATA,
+    DDEATH,
+    NDEATH
+} Message_Type;
 
-typedef struct {
-    const char* deviceID;
-    Metrics *metrics;
-} sp_device;
+// Topic namespace
+// namespace/group_id/message_type/edge_node_id/[device_id]
 
+const char* NCMDTypeToString(NCMDType type);
+NCMDType StringToNCMDType(const char* str);
+
+#define EN_NCMD_REBIRTH     (1U<<0)
+#define EN_NCMD_REBOOT      (1U<<1)
+#define EN_NCMD_SCAN_RATE   (1U<<2)
+#define EN_NCMD_NEXT_SERVER (1U<<3)
 typedef struct {
     const char* groupID;
     const char* nodeID;
+    const char* namespace;
+
+    char* Topic_NBIRTH;
+    char* Topic_NDATA;
+    char* Topic_NDEATH;
+
     int seq;
     int bdseq;
-    Metrics *metrics;
+    uint8_t NCMD_bit_mark;
+    Metrics *NBIRTH;
     sp_device devices[];
-} sp_node;
+} Sparkplug_Node;
 
-bool encode_string(pb_ostream_t *stream, const pb_field_t *field, void * const *arg);
-bool encode_metrics(pb_ostream_t *stream, const pb_field_t *field, void * const *arg);
-sparkplug_payload_metric *add_metric(Metrics *m);
-void free_metrics(Metrics* m);
+
+void Place_bdsep_Metric(sparkplug_payload_metric *bdseq, time_t* now);
+void Place_NCMD_Metric(sparkplug_payload_metric *metric, time_t* now, NCMDType cmd);
+void Place_Properties_HW_Model_Metric(sparkplug_payload_metric *rebirth, time_t* now, char* model);
+
+/* Fill NCMD content into NBIRTH metric block */
+void Node_Fill_NCMDs_NBIRTH_Metrics(Sparkplug_Node *node,time_t *now);
+sparkplug_payload* Node_Auto_Generate_NBIRTH_payload(Sparkplug_Node *node);
+
+/* Generate value for Topic_(Message type) field inside node and device */
+void Node_Generate_Topic_Namespace(Sparkplug_Node *node, Message_Type msg_type);
 #endif /* end of include guard: NODE_H */
