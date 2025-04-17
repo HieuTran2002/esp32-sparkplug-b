@@ -27,6 +27,13 @@ typedef enum {
 } NCMDType;
 
 typedef enum {
+    DCMD_UNKNOWN = 0,
+    DCMD_REBIRTH,
+    DCMD_REBOOT,
+    DCMD_SCAN_RATE,
+} DCMDType;
+
+typedef enum {
     MESSAGE_TYPE_UNKNOW = 0,
     NBIRTH,
     DBIRTH,
@@ -50,7 +57,11 @@ typedef struct {
     char* Topic_DDATA;
     char* Topic_DDEATH;
 
+    uint8_t DCMD_bit_mark;
+
     Metrics *DBIRTH;
+    Metrics *DDATA;
+    Metrics *DDEATH;
 } Sparkplug_Device;
 
 typedef struct {
@@ -69,6 +80,8 @@ typedef struct {
     Sparkplug_Device devices[];
 } Sparkplug_Node;
 
+/* -------------------- Payload + Message --------------------- */
+
 const char* NCMDTypeToString(NCMDType type);
 NCMDType StringToNCMDType(const char* str);
 const char* MessageType_2_String(Message_Type msg_type);
@@ -80,6 +93,14 @@ Metrics* Create_Metrics(uint8_t _capacity);
 sparkplug_payload_metric *add_metric(Metrics *m);
 void free_metrics(Metrics* m);
 uint16_t Calculate_Topic_NS_Len(Sparkplug_Node *node, size_t msg_type_len, Sparkplug_Device *device);
+
+/* -------------------- Encoded buffer --------------------- */
+typedef struct {
+    uint8_t buffer[255];
+    uint16_t buffer_len;
+    size_t encoded_length;
+} Encode_Buffer;
+bool encode_payload(Encode_Buffer *ebuffer, sparkplug_payload *payload);
 
 /* --------------------- Sparkplug Node -------------------- */
 const char* NCMDTypeToString(NCMDType type);
@@ -104,5 +125,13 @@ void Node_Generate_All_Topic_Namespace(Sparkplug_Node *node);
 
 /* -------------------- Sparkplug Device --------------------- */
 void Device_Generate_All_Topic_Namespace(Sparkplug_Node *node, Sparkplug_Device *device);
+void Device_Fill_DCMDs_DBIRTH_Metrics(Sparkplug_Device *device,time_t *now);
+void free_device(Sparkplug_Device *device);
+
+#define EN_DCMD_REBIRTH     (1U<<0)
+#define EN_DCMD_REBOOT      (1U<<1)
+#define EN_DCMD_SCAN_RATE   (1U<<2)
+
+void Parse_DDATA_Into_DBIRTH(Sparkplug_Device *device);
 
 #endif /* end of include guard: SPARKPLUG_H */

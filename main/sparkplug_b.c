@@ -1,11 +1,23 @@
 #include "sparkplug_b.h"
 #include "esp_heap_caps.h"
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 
 // General stuff
+bool encode_payload(Encode_Buffer *ebuffer, sparkplug_payload *payload){
+    pb_ostream_t stream = pb_ostream_from_buffer(ebuffer->buffer, ebuffer->buffer_len);
+    ebuffer->encoded_length = 0;
+    if(!pb_encode(&stream, org_eclipse_tahu_protobuf_Payload_fields, payload))
+        return false;
+
+    ebuffer->encoded_length = stream.bytes_written;
+    return true;
+}
+
+
 bool encode_string(pb_ostream_t *stream, const pb_field_t *field, void * const *arg){
     char* string = (char*)*arg;
     
@@ -84,6 +96,15 @@ const char* NCMDTypeToString(NCMDType type) {
         case NCMD_DIAGNOSTICS:   return "Node Control/Diagnostics";
         case NCMD_ADD_METRIC:    return "Node Control/Add Metric";
         case NCMD_REMOVE_METRIC: return "Node Control/Remove Metric";
+        default:                 return "Unknown";
+    }
+}
+
+const char* DCMDTypeToString(DCMDType type) {
+    switch (type) {
+        case DCMD_REBIRTH:       return "Node Control/Rebirth";
+        case DCMD_REBOOT:        return "Node Control/Reboot";
+        case DCMD_SCAN_RATE:     return "Node Control/Scan Rate";
         default:                 return "Unknown";
     }
 }
@@ -304,4 +325,62 @@ void Device_Generate_All_Topic_Namespace(Sparkplug_Node *node, Sparkplug_Device 
     printf("DBIRTH: %s\n", device->Topic_DBIRTH);
     printf("DDATA: %s\n", device->Topic_DDATA);
     printf("DDEATH: %s\n", device->Topic_DDEATH);
+}
+
+void Place_DCMD_Metric(sparkplug_payload_metric *metric, time_t* now, DCMDType cmd){
+    *metric = (sparkplug_payload_metric){
+        .is_null = false,
+        .has_timestamp = true,
+        .timestamp = *now,
+        .datatype = org_eclipse_tahu_protobuf_DataType_Boolean,
+        .value.boolean_value = false,
+        .name.arg = (void*)DCMDTypeToString(cmd),
+        .name.funcs.encode = &encode_string,
+        .which_value = org_eclipse_tahu_protobuf_Payload_Metric_boolean_value_tag,
+        .has_datatype = true,
+    };
+    if (cmd == DCMD_SCAN_RATE){
+        metric->datatype = org_eclipse_tahu_protobuf_DataType_UInt32;
+        metric->which_value = org_eclipse_tahu_protobuf_Payload_Metric_int_value_tag;
+        metric->value.int_value = 3000;
+    }
+}
+void Device_Fill_DCMDs_DBIRTH_Metrics(Sparkplug_Device *device,time_t *now){
+    sparkplug_payload_metric* p_metric = NULL;
+
+    if(device->DCMD_bit_mark & EN_DCMD_SCAN_RATE){
+        p_metric = (sparkplug_payload_metric*)add_metric(device->DBIRTH);
+        if(p_metric) Place_DCMD_Metric(p_metric, now, DCMD_SCAN_RATE);
+    }
+    if(device->DCMD_bit_mark & EN_DCMD_REBOOT){
+        p_metric = (sparkplug_payload_metric*)add_metric(device->DBIRTH);
+        if(p_metric) Place_DCMD_Metric(p_metric, now, DCMD_REBOOT);
+    }
+    if(device->DCMD_bit_mark & EN_DCMD_REBIRTH){
+        p_metric = (sparkplug_payload_metric*)add_metric(device->DBIRTH);
+        if(p_metric) Place_DCMD_Metric(p_metric, now, DCMD_REBIRTH);
+    }
+}
+
+// Free all allocated fields
+void free_device(Sparkplug_Device *device){
+    free(device->Topic_DDEATH);
+    free(device->Topic_DDATA);
+    free(device->Topic_DBIRTH);
+    free_metrics(device->DBIRTH);
+}
+
+void Parse_DDATA_Into_DBIRTH(Sparkplug_Device *device){
+    int required_capacity = (device->DBIRTH->used + device->DDATA->used);
+    printf("a: %d\n", required_capacity);
+
+    if(device->DBIRTH->capacity < required_capacity){
+        sparkplug_payload_metric* new_metrics = (sparkplug_payload_metric*)realloc(device->DBIRTH->metrics, sizeof(sparkplug_payload_metric) * required_capacity);
+        if(!new_metrics) return;
+
+        device->DBIRTH->metrics = new_metrics;
+        device->DBIRTH->capacity = required_capacity;
+    }
+    memcpy(&device->DBIRTH->metrics[device->DBIRTH->used], device->DDATA->metrics, sizeof(sparkplug_payload_metric) * device->DDATA->used);
+    device->DBIRTH->used += device->DDATA->used;
 }
