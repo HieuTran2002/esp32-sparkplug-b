@@ -7,8 +7,7 @@ idf_component_register(
             "mqtt_helper.c"
             "wifi_helper.c"
             "simple_SNTP.c"
-            "payload.c"
-            "node.c"
+            "sparkplug_b.c"
     INCLUDE_DIRS "."
 )
 
