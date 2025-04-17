@@ -1,11 +1,7 @@
 # Still under development
+- This project aimed to turn ESP32 into a full-fetch EoN.
 
-# Installation
-1. clone [nanopb](https://github.com/nanopb/nanopb)
-- Generate C code and header file for Sparkplug_b
-```
-cd ./nanopb/generator/
-python nanopb_generator.py --output-dir=./sparkplug_b sparkplug_b.proto
+# Dependency.
+- nanopb - for generate sparkplug_b code base for C.
+- ESP-IDF v5.4
 
-```
-2. Copy generated files into main/ and start coding.
