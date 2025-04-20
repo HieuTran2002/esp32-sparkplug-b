@@ -1,4 +1,3 @@
-#include "esp_log_level.h"
 #include <alloca.h>
 #include <stdlib.h>
 #include <reent.h>
@@ -37,8 +36,8 @@ char topic[100];
 bool Create_N_Encode_Node(){
     pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
     Sparkplug_Node node = {
-        .nodeID = "ESP32C6_EoN",
-        .groupID = "mylab",
+        .nodeID = "ESP32C6 EoN",
+        .groupID = "Home lab",
         .namespace = "spBv1.0",
         .bdseq = 0,
         .seq = 0,
@@ -62,11 +61,12 @@ bool Create_N_Encode_Node(){
     return 1;
 }
 
+
 bool Create_N_Encode_Device(){
     Sparkplug_Node *node = (Sparkplug_Node *)alloca(sizeof(Sparkplug_Node) + sizeof(Sparkplug_Device));
     *node = (Sparkplug_Node){
-        .nodeID = "ESP32C6_EoN",
-        .groupID = "mylab",
+        .nodeID = "ESP32C6 EoN",
+        .groupID = "Home lab",
         .namespace = "spBv1.0",
         .bdseq = 0,
         .seq = 0,
@@ -75,41 +75,37 @@ bool Create_N_Encode_Device(){
 
 
     Sparkplug_Device device = (Sparkplug_Device){
-        .deviceID = "TheDevice",
+        .deviceID = "ESP32 C6",
         .DCMD_bit_mark = (EN_DCMD_REBIRTH | EN_DCMD_REBOOT),
     };
 
-
     node->devices[0] = device;
 
-    device.DBIRTH = Create_Metrics(2);
-    if (!device.DBIRTH)
-        return false;
+
+
+    device.DCMD = Create_Metrics(2);
+    if (!device.DCMD) return false;
 
     time_t now;
     time(&now);
 
     // Device topic namespace
     Device_Generate_All_Topic_Namespace(node, &device);
-    Device_Fill_DCMDs_DBIRTH_Metrics(&device, &now);
+    Device_Fill_DCMDs_Metrics(&device, &now);
 
     // copy topic outside for later use
     strncpy(topic, device.Topic_DBIRTH, strlen(device.Topic_DBIRTH));
 
     // add DDATA
     device.DDATA = Create_Metrics(2);
-    if (!device.DDATA) {
-        return false;
-    }
+    if (!device.DDATA) return false;
 
-
-    sparkplug_payload_metric* metric = add_metric(device.DDATA);
-    *metric = (sparkplug_payload_metric){
+    *add_metric(device.DDATA) = (sparkplug_payload_metric){
         .has_timestamp = 1,
         .has_datatype = 1,
         .is_null = 0,
 
-        .name.arg = "Input/1",
+        .name.arg = "Input/Button 1",
         .name.funcs.encode = &encode_string,
 
         .datatype = org_eclipse_tahu_protobuf_DataType_Boolean,
@@ -118,13 +114,12 @@ bool Create_N_Encode_Device(){
         .timestamp = now,
     };
 
-    metric = add_metric(device.DDATA);
-    *metric = (sparkplug_payload_metric){
+    *add_metric(device.DDATA) = (sparkplug_payload_metric){
         .has_timestamp = 1,
         .has_datatype = 1,
         .is_null = 0,
 
-        .name.arg = "Input/2",
+        .name.arg = "Input/Button 2",
         .name.funcs.encode = &encode_string,
 
         .datatype = org_eclipse_tahu_protobuf_DataType_Boolean,
@@ -133,11 +128,35 @@ bool Create_N_Encode_Device(){
         .timestamp = now,
     };
 
-    Parse_DDATA_Into_DBIRTH(&device);
+    device.Properties = (Metrics*)Create_Metrics(1);
+    if(!device.Properties) return false;
+
+    *add_metric(device.Properties) = (sparkplug_payload_metric){
+        .has_timestamp = 1,
+        .has_datatype = 1,
+        .is_null = 0,
+
+        .name.arg = "Properties/Hardware Make",
+        .name.funcs.encode = &encode_string,
+
+        .datatype = org_eclipse_tahu_protobuf_DataType_String,
+        .value.string_value.arg = "Espressif",
+        .value.string_value.funcs.encode = &encode_string,
+        .which_value = org_eclipse_tahu_protobuf_Payload_Metric_string_value_tag,
+        .timestamp = now,
+    };
+
+
+    Metrics *array_metrics[3] = {device.DCMD, device.DDATA, device.Properties};
+    Stack_Metrics_ptrs stack_metrics = (Stack_Metrics_ptrs){
+        .Count = 3,
+        .Mul_Metrics_ptrs = array_metrics,
+    };
+    // Merge_Metrics(array_metrics, 2);
 
     sparkplug_payload payload = {
-        .metrics.arg = device.DBIRTH,
-        .metrics.funcs.encode = &encode_metrics,
+        .metrics.arg = &stack_metrics,
+        .metrics.funcs.encode = &encode_multiple_metrics_ptr,
         .has_timestamp = 1,
         .timestamp = now,
         .seq = 1,
@@ -146,15 +165,12 @@ bool Create_N_Encode_Device(){
 
     printf("encode payload: %d\n", encode_payload(&encoded_buffer, &payload));
     
-    // pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
-    // if(!pb_encode(&stream, org_eclipse_tahu_protobuf_Payload_fields, &payload))
-    //     return false;
-
-    // message_length = stream.bytes_written;
-    // ESP_LOGE(PB_ENCODE, "Encoded  %zu -> %zu bytes", sizeof(*device.DBIRTH->metrics), stream.bytes_written);
-    ESP_LOGE(PB_ENCODE, "Encoded  %zu -> %zu bytes", sizeof(*device.DBIRTH->metrics), encoded_buffer.encoded_length);
+    ESP_LOGE(PB_ENCODE, "Encoded  %zu -> %zu bytes", sizeof(*device.DDATA->metrics), encoded_buffer.encoded_length);
 
     free_device(&device);
+    free_metrics(device.DDATA);
+    free_metrics(device.DCMD);
+
     return true;
 }
 
@@ -168,11 +184,6 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
             sntp_service_init(&ntp);
             ESP_LOGI("ENCODE", "%d", Create_N_Encode_Device());
             esp_mqtt_client_publish(client, topic, (const char*)encoded_buffer.buffer, encoded_buffer.encoded_length, 1, 0);
-            break;
-
-        case MQTT_EVENT_SUBSCRIBED:
-            ESP_LOGI("SUB", "MQTT_EVENT_SUBSCRIBED, msg_id=%d", event->msg_id);
-            break;
 
         case MQTT_EVENT_PUBLISHED:
             ESP_LOGI("PUB", "MQTT_EVENT_PUBLISHED, data_len=%d", event->total_data_len);
@@ -189,7 +200,7 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
 
 void app_main() {
     nvs_flash_init();
-    wifi_init("cornhub", "headbanger");
+    wifi_init("MOC VIEN", "12346789");
 
     for(;;){
         vTaskDelay(2000 / portTICK_PERIOD_MS);

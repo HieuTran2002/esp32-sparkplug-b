@@ -39,6 +39,8 @@ typedef enum {
     DBIRTH,
     NDATA,
     DDATA,
+    NCMD,
+    DCMD,
     DDEATH,
     NDEATH
 } Message_Type;
@@ -50,17 +52,32 @@ typedef struct{
     sparkplug_payload_metric *metrics;
 } Metrics;
 
+typedef struct{
+    uint8_t Count;
+    Metrics** Mul_Metrics_ptrs;
+} Stack_Metrics_ptrs;
+
+
+/**
+ * Structure to hold data related to Sparkplug_b device.
+ *  - All 'Metrics' aren't meant to be frequestly modify.
+ *
+ * Description.
+ */
 typedef struct {
     const char* deviceID;
 
     char* Topic_DBIRTH;
+    char* Topic_DCMD;
     char* Topic_DDATA;
     char* Topic_DDEATH;
 
     uint8_t DCMD_bit_mark;
 
-    Metrics *DBIRTH;
+    Stack_Metrics_ptrs *DBIRTH; // DBIRTH is consist of DDATA, DCMD, and Properties
+    Metrics *DCMD;
     Metrics *DDATA;
+    Metrics *Properties;
     Metrics *DDEATH;
 } Sparkplug_Device;
 
@@ -70,6 +87,7 @@ typedef struct {
     const char* namespace;
 
     char* Topic_NBIRTH;
+    char* Topic_NCMD;
     char* Topic_NDATA;
     char* Topic_NDEATH;
 
@@ -77,6 +95,9 @@ typedef struct {
     int bdseq;
     uint8_t NCMD_bit_mark;
     Metrics *NBIRTH;
+    Metrics *NDATA;
+    Metrics *NCMD;
+    Metrics *NDEATH;
     Sparkplug_Device devices[];
 } Sparkplug_Node;
 
@@ -87,7 +108,16 @@ NCMDType StringToNCMDType(const char* str);
 const char* MessageType_2_String(Message_Type msg_type);
 
 bool encode_string(pb_ostream_t *stream, const pb_field_t *field, void * const *arg);
+
+/**
+ * Encode one 'Metrics'.
+ *  - Pass *Metrics to sparkplug_payload.metrics.arg
+ *
+ * Description.
+ */
 bool encode_metrics(pb_ostream_t *stream, const pb_field_t *field, void * const *arg);
+
+bool encode_multiple_metrics_ptr(pb_ostream_t *stream, const pb_field_t *field, void * const *arg);
 
 Metrics* Create_Metrics(uint8_t _capacity);
 sparkplug_payload_metric *add_metric(Metrics *m);
@@ -100,6 +130,7 @@ typedef struct {
     uint16_t buffer_len;
     size_t encoded_length;
 } Encode_Buffer;
+
 bool encode_payload(Encode_Buffer *ebuffer, sparkplug_payload *payload);
 
 /* --------------------- Sparkplug Node -------------------- */
@@ -125,13 +156,11 @@ void Node_Generate_All_Topic_Namespace(Sparkplug_Node *node);
 
 /* -------------------- Sparkplug Device --------------------- */
 void Device_Generate_All_Topic_Namespace(Sparkplug_Node *node, Sparkplug_Device *device);
-void Device_Fill_DCMDs_DBIRTH_Metrics(Sparkplug_Device *device,time_t *now);
+void Device_Fill_DCMDs_Metrics(Sparkplug_Device *device,time_t *now);
 void free_device(Sparkplug_Device *device);
 
 #define EN_DCMD_REBIRTH     (1U<<0)
 #define EN_DCMD_REBOOT      (1U<<1)
 #define EN_DCMD_SCAN_RATE   (1U<<2)
-
-void Parse_DDATA_Into_DBIRTH(Sparkplug_Device *device);
 
 #endif /* end of include guard: SPARKPLUG_H */

@@ -43,6 +43,33 @@ bool encode_metrics(pb_ostream_t *stream, const pb_field_t *field, void * const 
     return true;
 }
 
+/**
+ * Encode multiple 'Metrics' at once, use with sparkplug_payload.metrics.funcs.encode.
+ *  -Only pass &Stack_Metrics_ptrs to sparkplug_payload.metrics.arg.
+ */
+bool encode_multiple_metrics_ptr(pb_ostream_t *stream, const pb_field_t *field, void * const *arg){
+    Stack_Metrics_ptrs *stack_metrics = (Stack_Metrics_ptrs*)*arg;
+
+    // printf("merics %s %d\n", (char*)metrics->metrics->name.arg, metrics->used);
+
+    for (int i=0; i<stack_metrics->Count; i++)
+    {
+        for(int j=0; j < stack_metrics->Mul_Metrics_ptrs[i]->used; j++){
+
+            // printf("%s\n", (char*)stack_metrics->Mul_Metrics_ptrs[i]->metrics[j].name.arg);
+            
+            // Insert field
+            if (!pb_encode_tag_for_field(stream, field)) return false;
+
+            // encode metric
+            if(!pb_encode_submessage(stream, org_eclipse_tahu_protobuf_Payload_Metric_fields, &stack_metrics->Mul_Metrics_ptrs[i]->metrics[j])){
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 /* -------------------- Metrics --------------------- */
 
 /* Allocate new memory chunk for Metrics */
@@ -59,6 +86,9 @@ Metrics* Create_Metrics(uint8_t _capacity){
     return m;
 }
 
+/**
+ * Return the pointer after Metrics.used, if not enough space, allocate more.
+ */
 sparkplug_payload_metric *add_metric(Metrics *m){
     if(m->used >= m->capacity){
         if(!m->auto_expand) m->auto_expand = 1;
@@ -102,9 +132,9 @@ const char* NCMDTypeToString(NCMDType type) {
 
 const char* DCMDTypeToString(DCMDType type) {
     switch (type) {
-        case DCMD_REBIRTH:       return "Node Control/Rebirth";
-        case DCMD_REBOOT:        return "Node Control/Reboot";
-        case DCMD_SCAN_RATE:     return "Node Control/Scan Rate";
+        case DCMD_REBIRTH:       return "Device Control/Rebirth";
+        case DCMD_REBOOT:        return "Device Control/Reboot";
+        case DCMD_SCAN_RATE:     return "Device Control/Scan Rate";
         default:                 return "Unknown";
     }
 }
@@ -123,26 +153,25 @@ NCMDType StringToNCMDType(const char* str) {
 
 const char* MessageType_2_String(Message_Type msg_type){
     switch (msg_type) {
-        case NBIRTH: return "NBIRTH";
-        case DBIRTH: return "DBIRTH";
-        case NDATA: return "NDATA";
-        case DDATA: return "DDATA";
-        case DDEATH: return "DDEATH";
-        case NDEATH: return "NDEATH";
+        case NBIRTH:    return "NBIRTH";
+        case DBIRTH:    return "DBIRTH";
+        case NDATA:     return "NDATA";
+        case NCMD:      return "NCMD";
+        case DCMD:      return "DCMD";
+        case DDATA:     return "DDATA";
+        case DDEATH:    return "DDEATH";
+        case NDEATH:    return "NDEATH";
     
         default: return "UNKNOW";
     }
 }
 
 /* -------------------- Message Type --------------------- */
-
-
 uint16_t Calculate_Topic_NS_Len(Sparkplug_Node *node, size_t msg_type_len, Sparkplug_Device *device){
     uint16_t len = strlen(node->namespace) + 1 
         + strlen(node->groupID) + 1
         + msg_type_len + 1
         + strlen(node->nodeID) + 2;
-
 
     if (device != NULL){
         len += strlen(device->deviceID) + 1;
@@ -150,7 +179,6 @@ uint16_t Calculate_Topic_NS_Len(Sparkplug_Node *node, size_t msg_type_len, Spark
 
     return len;
 }
-
 
 
 /* -------------------- Sparkplug B Node -------------------- */
@@ -219,30 +247,6 @@ void Node_Fill_NCMDs_NBIRTH_Metrics(Sparkplug_Node *node,time_t *now){
     }
 }
 
-/* Allocate heap mem for nbirth, fill content, return address of nbirth payload */
-sparkplug_payload* Node_Auto_Generate_NBIRTH_payload(Sparkplug_Node *node){
-    time_t now;
-    time(&now);
-    node->NBIRTH = Create_Metrics(4);
-    Node_Fill_NCMDs_NBIRTH_Metrics(node, &now);
-
-    // bdseq
-    sparkplug_payload_metric *bdseq = add_metric(node->NBIRTH);
-    Place_bdsep_Metric(bdseq, &now);
-
-    sparkplug_payload* payload = (sparkplug_payload*)malloc(sizeof(sparkplug_payload));
-    *payload = (sparkplug_payload){
-        .metrics.arg = node->NBIRTH,
-        .metrics.funcs.encode = &encode_metrics,
-        .has_timestamp = 1,
-        .timestamp = now,
-        .seq = node->seq++,
-        .has_seq = 1,
-    };
-
-    return payload;
-}
-
 
 /* Create topic path base on Node/Device information, used for both Node and Device */
 void Generate_Topic_Namespace(Sparkplug_Node *node, Message_Type msg_type, Sparkplug_Device *device){
@@ -262,6 +266,11 @@ void Generate_Topic_Namespace(Sparkplug_Node *node, Message_Type msg_type, Spark
             ns = node->Topic_NDATA;
             break;
 
+        case NCMD:
+            node->Topic_NCMD = (char*)malloc(len);
+            ns = node->Topic_NCMD;
+            break;
+
         case NDEATH:
             node->Topic_NDEATH = (char*)malloc(len);
             ns = node->Topic_NDEATH;
@@ -277,6 +286,11 @@ void Generate_Topic_Namespace(Sparkplug_Node *node, Message_Type msg_type, Spark
             ns = device->Topic_DDATA;
             break;
 
+        case DCMD:
+            device->Topic_DCMD = (char*)malloc(len);
+            ns = device->Topic_DCMD;
+            break;
+
         case DDEATH:
             device->Topic_DDEATH = (char*)malloc(len);
             ns = device->Topic_DDEATH;
@@ -287,18 +301,9 @@ void Generate_Topic_Namespace(Sparkplug_Node *node, Message_Type msg_type, Spark
     }
 
     if(device==NULL){
-        snprintf(ns, len, "%s/%s/%s/%s", 
-                node->namespace, 
-                node->groupID, 
-                msg_type_string, 
-                node->nodeID);
+        snprintf(ns, len, "%s/%s/%s/%s", node->namespace, node->groupID, msg_type_string, node->nodeID);
     } else {
-        snprintf(ns, len, "%s/%s/%s/%s/%s", 
-                node->namespace, 
-                node->groupID, 
-                msg_type_string, 
-                node->nodeID,
-                device->deviceID);
+        snprintf(ns, len, "%s/%s/%s/%s/%s", node->namespace, node->groupID, msg_type_string, node->nodeID, device->deviceID);
     }
 }
 
@@ -306,25 +311,30 @@ void Node_Generate_All_Topic_Namespace(Sparkplug_Node *node){
     Generate_Topic_Namespace(node, NBIRTH, NULL);
     Generate_Topic_Namespace(node, NDATA, NULL);
     Generate_Topic_Namespace(node, NDEATH, NULL);
+    Generate_Topic_Namespace(node, NCMD, NULL);
 
     printf("NBIRTH: %s\n" , node->Topic_NBIRTH);
     printf("NDATA: %s\n" , node->Topic_NDATA);
     printf("NDEATH: %s\n" , node->Topic_NDEATH);
+    printf("NCMD: %s\n" , node->Topic_NCMD);
 }
 
 /**
  * Sparkplug B Device
  */
+/* ----------------------------- Sparkplug Device ------------------------------- */
 #define container_of(ptr, type, member)  ((type *)((char *)(ptr) - offsetof(type, member)))
 
 void Device_Generate_All_Topic_Namespace(Sparkplug_Node *node, Sparkplug_Device *device){
     Generate_Topic_Namespace(node, DBIRTH, device);
     Generate_Topic_Namespace(node, DDATA, device);
     Generate_Topic_Namespace(node, DDEATH, device);
+    Generate_Topic_Namespace(node, DCMD, device);
 
     printf("DBIRTH: %s\n", device->Topic_DBIRTH);
     printf("DDATA: %s\n", device->Topic_DDATA);
     printf("DDEATH: %s\n", device->Topic_DDEATH);
+    printf("DCMD: %s\n", device->Topic_DCMD);
 }
 
 void Place_DCMD_Metric(sparkplug_payload_metric *metric, time_t* now, DCMDType cmd){
@@ -345,19 +355,19 @@ void Place_DCMD_Metric(sparkplug_payload_metric *metric, time_t* now, DCMDType c
         metric->value.int_value = 3000;
     }
 }
-void Device_Fill_DCMDs_DBIRTH_Metrics(Sparkplug_Device *device,time_t *now){
+void Device_Fill_DCMDs_Metrics(Sparkplug_Device *device,time_t *now){
     sparkplug_payload_metric* p_metric = NULL;
 
     if(device->DCMD_bit_mark & EN_DCMD_SCAN_RATE){
-        p_metric = (sparkplug_payload_metric*)add_metric(device->DBIRTH);
+        p_metric = (sparkplug_payload_metric*)add_metric(device->DCMD);
         if(p_metric) Place_DCMD_Metric(p_metric, now, DCMD_SCAN_RATE);
     }
     if(device->DCMD_bit_mark & EN_DCMD_REBOOT){
-        p_metric = (sparkplug_payload_metric*)add_metric(device->DBIRTH);
+        p_metric = (sparkplug_payload_metric*)add_metric(device->DCMD);
         if(p_metric) Place_DCMD_Metric(p_metric, now, DCMD_REBOOT);
     }
     if(device->DCMD_bit_mark & EN_DCMD_REBIRTH){
-        p_metric = (sparkplug_payload_metric*)add_metric(device->DBIRTH);
+        p_metric = (sparkplug_payload_metric*)add_metric(device->DCMD);
         if(p_metric) Place_DCMD_Metric(p_metric, now, DCMD_REBIRTH);
     }
 }
@@ -367,20 +377,4 @@ void free_device(Sparkplug_Device *device){
     free(device->Topic_DDEATH);
     free(device->Topic_DDATA);
     free(device->Topic_DBIRTH);
-    free_metrics(device->DBIRTH);
-}
-
-void Parse_DDATA_Into_DBIRTH(Sparkplug_Device *device){
-    int required_capacity = (device->DBIRTH->used + device->DDATA->used);
-    printf("a: %d\n", required_capacity);
-
-    if(device->DBIRTH->capacity < required_capacity){
-        sparkplug_payload_metric* new_metrics = (sparkplug_payload_metric*)realloc(device->DBIRTH->metrics, sizeof(sparkplug_payload_metric) * required_capacity);
-        if(!new_metrics) return;
-
-        device->DBIRTH->metrics = new_metrics;
-        device->DBIRTH->capacity = required_capacity;
-    }
-    memcpy(&device->DBIRTH->metrics[device->DBIRTH->used], device->DDATA->metrics, sizeof(sparkplug_payload_metric) * device->DDATA->used);
-    device->DBIRTH->used += device->DDATA->used;
 }
