@@ -110,6 +110,7 @@ sparkplug_payload_metric *add_metric(Metrics *m){
 
 void free_metrics(Metrics* m){
     free(m->metrics);
+    m->metrics = NULL;
     free(m);
 }
 
@@ -372,9 +373,40 @@ void Device_Fill_DCMDs_Metrics(Sparkplug_Device *device,time_t *now){
     }
 }
 
+
+void free_Stack_Metrics_ptrs(Stack_Metrics_ptrs *c) {
+    if (!c) return;
+
+    if (c->Mul_Metrics_ptrs) {
+        for (size_t i = 0; i < c->Count; ++i) {
+            if (c->Mul_Metrics_ptrs[i]) {
+                free_metrics(c->Mul_Metrics_ptrs[i]);
+                c->Mul_Metrics_ptrs[i] = NULL;  // Avoid dangling
+            }
+        }
+        free(c->Mul_Metrics_ptrs);   // Free the array of pointers
+        c->Mul_Metrics_ptrs = NULL;
+    }
+
+    free(c);  // Free the container itself
+}
+
 // Free all allocated fields
-void free_device(Sparkplug_Device *device){
-    free(device->Topic_DDEATH);
-    free(device->Topic_DDATA);
-    free(device->Topic_DBIRTH);
+void free_device(Sparkplug_Device *d){
+    if(!d) return;
+    free_Stack_Metrics_ptrs(d->DBIRTH);
+
+    // free allocated metrics
+    if(d->DCMD) {free_metrics(d->DCMD); d->DCMD = NULL; printf("free 1\n");}
+    if(d->DDATA) {free_metrics(d->DDATA); d->DDATA = NULL; printf("free 2\n");}
+    if(d->DDEATH) {free_metrics(d->DDEATH); d->DDEATH = NULL; printf("free 3\n");}
+    if(d->Properties) {free_metrics(d->Properties); d->Properties = NULL; printf("free 4\n");}
+
+
+    // free allocated string
+    if(d->Topic_DBIRTH) {free(d->Topic_DBIRTH); d->Topic_DBIRTH=NULL;}
+    if(d->Topic_DDATA) {free(d->Topic_DDATA); d->Topic_DDATA=NULL;}
+    if(d->Topic_DDEATH) {free(d->Topic_DDEATH); d->Topic_DDEATH=NULL;}
+
+    free(d);
 }

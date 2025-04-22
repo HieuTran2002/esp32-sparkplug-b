@@ -98,7 +98,9 @@ typedef struct {
     Metrics *NDATA;
     Metrics *NCMD;
     Metrics *NDEATH;
-    Sparkplug_Device devices[];
+
+
+    Sparkplug_Device** devices[];
 } Sparkplug_Node;
 
 /* -------------------- Payload + Message --------------------- */

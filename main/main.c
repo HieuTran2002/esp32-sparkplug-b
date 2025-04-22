@@ -22,7 +22,7 @@
 
 ntp_time ntp = {};
 
-uint8_t buffer[255];  // Output buf
+uint8_t buffer[2];  // Output buf
 size_t message_length;
 
 Encode_Buffer encoded_buffer = (Encode_Buffer){.buffer_len = 255};
@@ -63,7 +63,7 @@ bool Create_N_Encode_Node(){
 
 
 bool Create_N_Encode_Device(){
-    Sparkplug_Node *node = (Sparkplug_Node *)alloca(sizeof(Sparkplug_Node) + sizeof(Sparkplug_Device));
+    Sparkplug_Node *node = (Sparkplug_Node *)malloc(sizeof(Sparkplug_Node) + sizeof(Sparkplug_Device));
     *node = (Sparkplug_Node){
         .nodeID = "ESP32C6 EoN",
         .groupID = "Home lab",
@@ -74,33 +74,32 @@ bool Create_N_Encode_Device(){
     };
 
 
-    Sparkplug_Device device = (Sparkplug_Device){
+    Sparkplug_Device *device = (Sparkplug_Device*)malloc(sizeof(Sparkplug_Device));
+
+    *device = (Sparkplug_Device){
         .deviceID = "ESP32 C6",
         .DCMD_bit_mark = (EN_DCMD_REBIRTH | EN_DCMD_REBOOT),
     };
 
-    node->devices[0] = device;
 
-
-
-    device.DCMD = Create_Metrics(2);
-    if (!device.DCMD) return false;
+    device->DCMD = Create_Metrics(2);
+    if (!device->DCMD) return false;
 
     time_t now;
     time(&now);
 
     // Device topic namespace
-    Device_Generate_All_Topic_Namespace(node, &device);
-    Device_Fill_DCMDs_Metrics(&device, &now);
+    Device_Generate_All_Topic_Namespace(node, device);
+    Device_Fill_DCMDs_Metrics(device, &now);
 
     // copy topic outside for later use
-    strncpy(topic, device.Topic_DBIRTH, strlen(device.Topic_DBIRTH));
+    strncpy(topic, device->Topic_DBIRTH, strlen(device->Topic_DBIRTH));
 
     // add DDATA
-    device.DDATA = Create_Metrics(2);
-    if (!device.DDATA) return false;
+    device->DDATA = Create_Metrics(2);
+    if (!device->DDATA) return false;
 
-    *add_metric(device.DDATA) = (sparkplug_payload_metric){
+    *add_metric(device->DDATA) = (sparkplug_payload_metric){
         .has_timestamp = 1,
         .has_datatype = 1,
         .is_null = 0,
@@ -114,7 +113,7 @@ bool Create_N_Encode_Device(){
         .timestamp = now,
     };
 
-    *add_metric(device.DDATA) = (sparkplug_payload_metric){
+    *add_metric(device->DDATA) = (sparkplug_payload_metric){
         .has_timestamp = 1,
         .has_datatype = 1,
         .is_null = 0,
@@ -128,10 +127,10 @@ bool Create_N_Encode_Device(){
         .timestamp = now,
     };
 
-    device.Properties = (Metrics*)Create_Metrics(1);
-    if(!device.Properties) return false;
+    device->Properties = (Metrics*)Create_Metrics(1);
+    if(!device->Properties) return false;
 
-    *add_metric(device.Properties) = (sparkplug_payload_metric){
+    *add_metric(device->Properties) = (sparkplug_payload_metric){
         .has_timestamp = 1,
         .has_datatype = 1,
         .is_null = 0,
@@ -147,7 +146,7 @@ bool Create_N_Encode_Device(){
     };
 
 
-    Metrics *array_metrics[3] = {device.DCMD, device.DDATA, device.Properties};
+    Metrics *array_metrics[3] = {device->DCMD, device->DDATA, device->Properties};
     Stack_Metrics_ptrs stack_metrics = (Stack_Metrics_ptrs){
         .Count = 3,
         .Mul_Metrics_ptrs = array_metrics,
@@ -164,12 +163,15 @@ bool Create_N_Encode_Device(){
     };
 
     printf("encode payload: %d\n", encode_payload(&encoded_buffer, &payload));
-    
-    ESP_LOGE(PB_ENCODE, "Encoded  %zu -> %zu bytes", sizeof(*device.DDATA->metrics), encoded_buffer.encoded_length);
 
-    free_device(&device);
-    free_metrics(device.DDATA);
-    free_metrics(device.DCMD);
+    printf("DDATA %zu\n", sizeof(*device->DDATA->metrics));
+    printf("DDATA %zu\n", sizeof(*device->DCMD->metrics));
+    printf("DDATA %zu\n", sizeof(*device->Properties->metrics));
+    
+    ESP_LOGE(PB_ENCODE, "Encoded  %zu -> %zu bytes", sizeof(*device->DDATA->metrics), encoded_buffer.encoded_length);
+
+    free_device(device);
+    free(node);
 
     return true;
 }
@@ -181,12 +183,10 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
 
     switch (event_id) {
         case MQTT_EVENT_CONNECTED:
-            sntp_service_init(&ntp);
-            ESP_LOGI("ENCODE", "%d", Create_N_Encode_Device());
             esp_mqtt_client_publish(client, topic, (const char*)encoded_buffer.buffer, encoded_buffer.encoded_length, 1, 0);
 
         case MQTT_EVENT_PUBLISHED:
-            ESP_LOGI("PUB", "MQTT_EVENT_PUBLISHED, data_len=%d", event->total_data_len);
+            ESP_LOGI("PUB", "MQTT_EVENT_PUBLISHED, data_len=%d", event->data_len);
             break;
 
         case MQTT_EVENT_DATA:
@@ -198,9 +198,17 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
     }
 }
 
+void wifi_on_connected_handle(void* event_data){
+    sntp_service_init(&ntp);
+    mqtt_init();
+
+    ESP_LOGI("ENCODE", "%d", Create_N_Encode_Device());
+}
+
 void app_main() {
     nvs_flash_init();
-    wifi_init("MOC VIEN", "12346789");
+    wifi_init("HCTL", "123456789HCTL");
+    register_wifi_connected_callback(wifi_on_connected_handle);
 
     for(;;){
         vTaskDelay(2000 / portTICK_PERIOD_MS);

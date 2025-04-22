@@ -13,6 +13,9 @@
 
 void wifi_init(char *ssid, char *pwd);
 
+typedef void(* wifi_event_callback_t)(void* event_data);
+void register_wifi_connected_callback(wifi_event_callback_t callback);
+
 // event callbackfor wifi event
 // ** only has event_data since IP is what mostly needed
 

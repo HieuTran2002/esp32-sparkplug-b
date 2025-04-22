@@ -9,6 +9,12 @@
 
 const char* WIFI = "WIFI";
 
+wifi_event_callback_t wifi_connected_callback;
+
+void register_wifi_connected_callback(wifi_event_callback_t callback){
+    wifi_connected_callback = callback;
+}
+
 
 void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data){
     if (event_base == WIFI_EVENT){
@@ -19,7 +25,7 @@ void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id
 
     else if(event_base == IP_EVENT){
         if(event_id == IP_EVENT_STA_GOT_IP){
-            mqtt_init();
+            wifi_connected_callback(event_data);
         }
     }
 }
