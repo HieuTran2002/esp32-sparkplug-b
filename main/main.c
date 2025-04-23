@@ -34,36 +34,7 @@ char topic[100];
 
 
 bool Create_N_Encode_Node(){
-    pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
-    Sparkplug_Node node = {
-        .nodeID = "ESP32C6 EoN",
-        .groupID = "Home lab",
-        .namespace = "spBv1.0",
-        .bdseq = 0,
-        .seq = 0,
-        .NCMD_bit_mark = (EN_NCMD_REBIRTH | EN_NCMD_REBOOT | EN_NCMD_SCAN_RATE),
-    };
-
-    sparkplug_payload* payload = Node_Auto_Generate_NBIRTH_payload(&node);
-    Node_Generate_All_Topic_Namespace(&node);
-
-    strncpy(topic, node.Topic_NBIRTH, strlen(node.Topic_NBIRTH));
-
-    if(!pb_encode(&stream, org_eclipse_tahu_protobuf_Payload_fields, payload))
-        return false;
-
-    message_length = stream.bytes_written;
-    ESP_LOGE(PB_ENCODE, "Encoded  %zu -> %zu bytes", sizeof(*node.NBIRTH->metrics), stream.bytes_written);
-
-    // Free payload after successfully encode.
-    free(payload);
-    free_metrics(node.NBIRTH);
-    return 1;
-}
-
-
-bool Create_N_Encode_Device(){
-    Sparkplug_Node *node = (Sparkplug_Node *)malloc(sizeof(Sparkplug_Node) + sizeof(Sparkplug_Device));
+    Sparkplug_Node *node = (Sparkplug_Node*)malloc(sizeof(Sparkplug_Node));
     *node = (Sparkplug_Node){
         .nodeID = "ESP32C6 EoN",
         .groupID = "Home lab",
@@ -73,13 +44,81 @@ bool Create_N_Encode_Device(){
         .NCMD_bit_mark = (EN_NCMD_REBIRTH | EN_NCMD_REBOOT | EN_NCMD_SCAN_RATE),
     };
 
+    time_t now;
+    time(&now);
 
+    Node_Generate_All_Topic_Namespace(node);
+
+    // add NCMD
+    node->NCMD = Create_Metrics(4);
+    Node_Fill_NCMDs_Metrics(node, &now);
+
+    // add NDATA
+    node->NDATA = Create_Metrics(1);
+    *(add_metric(node->NDATA)) = (sparkplug_payload_metric){
+        .has_timestamp = 1,
+        .has_datatype = 1,
+        .is_null = 0,
+
+        .name.arg = "CPU Temperature",
+        .name.funcs.encode = &encode_string,
+
+        .datatype = org_eclipse_tahu_protobuf_DataType_Int16,
+        .value.int_value = 0,
+        .which_value = org_eclipse_tahu_protobuf_Payload_Metric_int_value_tag,
+        .timestamp = now,
+    };
+
+    strncpy(topic, node->Topic_NBIRTH, strlen(node->Topic_NBIRTH));
+
+    Metrics *stack_metrics[2] = {node->NCMD, node->NDATA};
+    Stack_Metrics_ptrs stack_metrics_ptrs =  (Stack_Metrics_ptrs){
+        .Mul_Metrics_ptrs = stack_metrics,
+        .Count = 2,
+    };
+
+    sparkplug_payload payload = {
+        .metrics.arg = &stack_metrics_ptrs,
+        .metrics.funcs.encode = &encode_multiple_metrics_ptr,
+        .has_timestamp = 1,
+        .timestamp = now,
+        .seq = 1,
+        .has_seq = 1,
+    };
+
+    printf("encode payload: %d\n", encode_payload(&encoded_buffer, &payload));
+
+    free_node(node);
+    return 1;
+}
+
+
+bool Create_N_Encode_Device(){
+    // define EoN
+    Sparkplug_Node *node = (Sparkplug_Node *)malloc(sizeof(Sparkplug_Node));
+    *node = (Sparkplug_Node){
+        .nodeID = "ESP32C6 EoN",
+        .groupID = "Home lab",
+        .namespace = "spBv1.0",
+        .bdseq = 0,
+        .seq = 0,
+        .NCMD_bit_mark = (EN_NCMD_REBIRTH | EN_NCMD_REBOOT | EN_NCMD_SCAN_RATE),
+    };
+
+    // create device
     Sparkplug_Device *device = (Sparkplug_Device*)malloc(sizeof(Sparkplug_Device));
+
+    // add device manager to node
+    node->Device_Manager = create_device_manager(2);
+    add_device(node->Device_Manager, device);
+
 
     *device = (Sparkplug_Device){
         .deviceID = "ESP32 C6",
         .DCMD_bit_mark = (EN_DCMD_REBIRTH | EN_DCMD_REBOOT),
     };
+
+    printf("Device in node %s\n", node->Device_Manager->devices[0]->deviceID);
 
 
     device->DCMD = Create_Metrics(2);
@@ -184,6 +223,7 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
     switch (event_id) {
         case MQTT_EVENT_CONNECTED:
             esp_mqtt_client_publish(client, topic, (const char*)encoded_buffer.buffer, encoded_buffer.encoded_length, 1, 0);
+            break;
 
         case MQTT_EVENT_PUBLISHED:
             ESP_LOGI("PUB", "MQTT_EVENT_PUBLISHED, data_len=%d", event->data_len);
@@ -202,7 +242,7 @@ void wifi_on_connected_handle(void* event_data){
     sntp_service_init(&ntp);
     mqtt_init();
 
-    ESP_LOGI("ENCODE", "%d", Create_N_Encode_Device());
+    ESP_LOGI("ENCODE", "%d", Create_N_Encode_Node());
 }
 
 void app_main() {

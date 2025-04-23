@@ -109,8 +109,7 @@ sparkplug_payload_metric *add_metric(Metrics *m){
 }
 
 void free_metrics(Metrics* m){
-    free(m->metrics);
-    m->metrics = NULL;
+    if(m->metrics){ free(m->metrics); m->metrics = NULL; }
     free(m);
 }
 
@@ -232,18 +231,18 @@ void Place_Properties_HW_Model_Metric(sparkplug_payload_metric *hw_model, time_t
     };
 }
 
-void Node_Fill_NCMDs_NBIRTH_Metrics(Sparkplug_Node *node,time_t *now){
+void Node_Fill_NCMDs_Metrics(Sparkplug_Node *node,time_t *now){
     sparkplug_payload_metric* p_metric = NULL;
     if(node->NCMD_bit_mark & EN_NCMD_SCAN_RATE){
-        p_metric = (sparkplug_payload_metric*)add_metric(node->NBIRTH);
+        p_metric = (sparkplug_payload_metric*)add_metric(node->NCMD);
         if(p_metric) Place_NCMD_Metric(p_metric, now, NCMD_SCAN_RATE);
     }
     if(node->NCMD_bit_mark & EN_NCMD_REBOOT){
-        p_metric = (sparkplug_payload_metric*)add_metric(node->NBIRTH);
+        p_metric = (sparkplug_payload_metric*)add_metric(node->NCMD);
         if(p_metric) Place_NCMD_Metric(p_metric, now, NCMD_REBOOT);
     }
     if(node->NCMD_bit_mark & EN_NCMD_REBIRTH){
-        p_metric = (sparkplug_payload_metric*)add_metric(node->NBIRTH);
+        p_metric = (sparkplug_payload_metric*)add_metric(node->NCMD);
         if(p_metric) Place_NCMD_Metric(p_metric, now, NCMD_REBIRTH);
     }
 }
@@ -320,11 +319,32 @@ void Node_Generate_All_Topic_Namespace(Sparkplug_Node *node){
     printf("NCMD: %s\n" , node->Topic_NCMD);
 }
 
-/**
- * Sparkplug B Device
- */
+
+/* ------------------------ Device Manager -------------------------- */
+Device_Manager_t *create_device_manager(uint8_t cap){
+    Device_Manager_t *dm = (Device_Manager_t*)malloc(sizeof(Device_Manager_t) + sizeof(Sparkplug_Device) * cap);
+
+    dm->capacity = cap;
+    dm->used = 0;
+    return dm;
+}
+
+void add_device(Device_Manager_t* dm, Sparkplug_Device *d){
+    if(dm->capacity <= dm->used){
+        uint8_t new_cap = dm->capacity + AUTO_EXPAND;
+        dm->devices = realloc(dm->devices, sizeof(Sparkplug_Device*) * new_cap);
+        if(!dm->devices){
+            // handle allocation failure
+            perror("Failed to realloc devices array");
+            return;
+        }
+        dm->capacity = new_cap;
+    }
+    dm->devices[dm->used++] = d;
+}
+
+
 /* ----------------------------- Sparkplug Device ------------------------------- */
-#define container_of(ptr, type, member)  ((type *)((char *)(ptr) - offsetof(type, member)))
 
 void Device_Generate_All_Topic_Namespace(Sparkplug_Node *node, Sparkplug_Device *device){
     Generate_Topic_Namespace(node, DBIRTH, device);
@@ -399,14 +419,41 @@ void free_device(Sparkplug_Device *d){
     // free allocated metrics
     if(d->DCMD) {free_metrics(d->DCMD); d->DCMD = NULL; printf("free 1\n");}
     if(d->DDATA) {free_metrics(d->DDATA); d->DDATA = NULL; printf("free 2\n");}
-    if(d->DDEATH) {free_metrics(d->DDEATH); d->DDEATH = NULL; printf("free 3\n");}
     if(d->Properties) {free_metrics(d->Properties); d->Properties = NULL; printf("free 4\n");}
+    if(d->DDEATH) {free_metrics(d->DDEATH); d->DDEATH = NULL; printf("free 3\n");}
 
 
     // free allocated string
     if(d->Topic_DBIRTH) {free(d->Topic_DBIRTH); d->Topic_DBIRTH=NULL;}
-    if(d->Topic_DDATA) {free(d->Topic_DDATA); d->Topic_DDATA=NULL;}
+    if(d->Topic_DDATA)  {free(d->Topic_DDATA);  d->Topic_DDATA=NULL;}
+    if(d->Topic_DCMD)   {free(d->Topic_DCMD);   d->Topic_DCMD=NULL;}
     if(d->Topic_DDEATH) {free(d->Topic_DDEATH); d->Topic_DDEATH=NULL;}
 
+
     free(d);
+}
+
+void free_device_manager(Device_Manager_t *dm){
+    for(int i=0; i < dm->used; i++){
+        free(dm->devices[i]);
+        dm->devices[i] = NULL;
+    }
+    free(dm);
+}
+
+void free_node(Sparkplug_Node *n){
+    if(!n) return;
+    if(n->NBIRTH) {free_Stack_Metrics_ptrs(n->NBIRTH); n->NBIRTH = NULL; printf("free 0\n");}
+
+    if(n->NCMD) {free_metrics(n->NCMD); n->NCMD = NULL; printf("free 1\n");}
+    if(n->NDATA) {free_metrics(n->NDATA); n->NDATA = NULL; printf("free 2\n");}
+    if(n->NDEATH) {free_metrics(n->NDEATH); n->NDEATH = NULL; printf("free 3\n");}
+    if(n->Properties) {free_metrics(n->Properties); n->Properties = NULL; printf("free 4\n");}
+
+    if(n->Topic_NBIRTH) {free(n->Topic_NBIRTH); n->Topic_NBIRTH=NULL;}
+    if(n->Topic_NDATA)  {free(n->Topic_NDATA);  n->Topic_NDATA=NULL;}
+    if(n->Topic_NCMD)   {free(n->Topic_NCMD);   n->Topic_NCMD=NULL;}
+    if(n->Topic_NDEATH) {free(n->Topic_NDEATH); n->Topic_NDEATH=NULL;}
+
+    if(n->Device_Manager) free_device_manager(n->Device_Manager);
 }

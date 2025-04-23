@@ -8,9 +8,11 @@
 #include <time.h>
 
 
+
 /* -------------------- Macros --------------------- */
 #define sparkplug_payload org_eclipse_tahu_protobuf_Payload
 #define sparkplug_payload_metric org_eclipse_tahu_protobuf_Payload_Metric
+#define AUTO_EXPAND  4
 
 
 /* -------------------- Type Definition for message and payload --------------------- */
@@ -81,6 +83,17 @@ typedef struct {
     Metrics *DDEATH;
 } Sparkplug_Device;
 
+/* Help node keep track how many devices it associated with */
+typedef struct {
+    uint8_t capacity;
+    uint8_t used;
+    Sparkplug_Device** devices;
+} Device_Manager_t;
+
+/**
+ * Hold all EoN related data, also keep track of devides.
+ *
+ */
 typedef struct {
     const char* groupID;
     const char* nodeID;
@@ -94,13 +107,14 @@ typedef struct {
     int seq;
     int bdseq;
     uint8_t NCMD_bit_mark;
-    Metrics *NBIRTH;
+
+    Stack_Metrics_ptrs *NBIRTH; // NBIRTH is consist of NDATA, NCMD, and Properties
     Metrics *NDATA;
     Metrics *NCMD;
     Metrics *NDEATH;
+    Metrics *Properties;
 
-
-    Sparkplug_Device** devices[];
+    Device_Manager_t *Device_Manager;
 } Sparkplug_Node;
 
 /* -------------------- Payload + Message --------------------- */
@@ -123,7 +137,6 @@ bool encode_multiple_metrics_ptr(pb_ostream_t *stream, const pb_field_t *field, 
 
 Metrics* Create_Metrics(uint8_t _capacity);
 sparkplug_payload_metric *add_metric(Metrics *m);
-void free_metrics(Metrics* m);
 uint16_t Calculate_Topic_NS_Len(Sparkplug_Node *node, size_t msg_type_len, Sparkplug_Device *device);
 
 /* -------------------- Encoded buffer --------------------- */
@@ -149,8 +162,8 @@ void Place_NCMD_Metric(sparkplug_payload_metric *metric, time_t* now, NCMDType c
 void Place_Properties_HW_Model_Metric(sparkplug_payload_metric *rebirth, time_t* now, char* model);
 
 /* Fill NCMD content into NBIRTH metric block */
-void Node_Fill_NCMDs_NBIRTH_Metrics(Sparkplug_Node *node,time_t *now);
-sparkplug_payload* Node_Auto_Generate_NBIRTH_payload(Sparkplug_Node *node);
+void Node_Fill_NCMDs_Metrics(Sparkplug_Node *node,time_t *now);
+// sparkplug_payload* Node_Auto_Generate_NBIRTH_payload(Sparkplug_Node *node);
 
 /* Generate value for Topic_(Message type) field inside node and device */
 void Generate_Topic_Namespace(Sparkplug_Node *node, Message_Type msg_type, Sparkplug_Device *device);
@@ -159,10 +172,17 @@ void Node_Generate_All_Topic_Namespace(Sparkplug_Node *node);
 /* -------------------- Sparkplug Device --------------------- */
 void Device_Generate_All_Topic_Namespace(Sparkplug_Node *node, Sparkplug_Device *device);
 void Device_Fill_DCMDs_Metrics(Sparkplug_Device *device,time_t *now);
-void free_device(Sparkplug_Device *device);
+
+Device_Manager_t *create_device_manager(uint8_t cap);
+void add_device(Device_Manager_t* dm, Sparkplug_Device *d);
 
 #define EN_DCMD_REBIRTH     (1U<<0)
 #define EN_DCMD_REBOOT      (1U<<1)
 #define EN_DCMD_SCAN_RATE   (1U<<2)
+
+/* ------------------------- Free stuff -------------------------- */
+void free_device(Sparkplug_Device *device);
+void free_metrics(Metrics* m);
+void free_node(Sparkplug_Node *n);
 
 #endif /* end of include guard: SPARKPLUG_H */
