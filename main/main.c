@@ -26,10 +26,12 @@ ntp_time ntp = {};
 uint8_t buffer[2];  // Output buf
 size_t message_length;
 
-Encode_Buffer nbirth = (Encode_Buffer){.buffer_len = 255};
-Encode_Buffer dbirth = (Encode_Buffer){.buffer_len = 255};
-Encode_Buffer ndata  = (Encode_Buffer){.buffer_len = 255};
-Encode_Buffer ddata  = (Encode_Buffer){.buffer_len = 255};
+Encode_Buffer nbirth = (Encode_Buffer){.buffer_len = 200};
+Encode_Buffer dbirth = (Encode_Buffer){.buffer_len = 200};
+Encode_Buffer ndata  = (Encode_Buffer){.buffer_len = 100};
+Encode_Buffer ddata  = (Encode_Buffer){.buffer_len = 100};
+Encode_Buffer ddeath  = (Encode_Buffer){.buffer_len = 100};
+Encode_Buffer ndeath  = (Encode_Buffer){.buffer_len = 50};
 
 Sparkplug_Node *node;
 Sparkplug_Device *device;
@@ -75,10 +77,29 @@ bool Create_N_Encode_Node(){
         .timestamp = now,
     };
 
-    Metrics *stack_metrics[2] = {node->NCMD, node->NDATA};
+    // bdseq
+    Metrics bdseq = (Metrics){
+        .capacity = 1,
+        .used = 1,
+    };
+    sparkplug_payload_metric bdseq_metric = (sparkplug_payload_metric){
+        .is_null = false,
+        .has_timestamp = true,
+        .timestamp = now,
+        .datatype = org_eclipse_tahu_protobuf_DataType_UInt32,
+        .value.int_value = node->bdseq++,
+        .name.arg = "bdSeq",
+        .name.funcs.encode = &encode_string,
+        .which_value = org_eclipse_tahu_protobuf_Payload_Metric_int_value_tag,
+        .has_datatype = true,
+    };
+    bdseq.metrics = &bdseq_metric;
+
+
+    Metrics *stack_metrics[3] = {node->NCMD, node->NDATA, &bdseq};
     Stack_Metrics_ptrs stack_metrics_ptrs =  (Stack_Metrics_ptrs){
         .Mul_Metrics_ptrs = stack_metrics,
-        .Count = 2,
+        .Count = 3,
     };
 
     sparkplug_payload payload = {
@@ -86,7 +107,7 @@ bool Create_N_Encode_Node(){
         .metrics.funcs.encode = &encode_multiple_metrics_ptr,
         .has_timestamp = 1,
         .timestamp = now,
-        .seq = 0,
+        .seq = node->seq++,
         .has_seq = 1,
     };
 
@@ -171,10 +192,26 @@ bool Create_N_Encode_Device(){
         .timestamp = now,
     };
 
+    Metrics bdseq = (Metrics){
+        .capacity = 1,
+        .used = 1,
+        .metrics = &(sparkplug_payload_metric){
+            .is_null = false,
+            .has_timestamp = true,
+            .timestamp = now,
+            .datatype = org_eclipse_tahu_protobuf_DataType_UInt32,
+            .value.int_value = device->bdseq++,
+            .name.arg = "bdSeq",
+            .name.funcs.encode = &encode_string,
+            .which_value = org_eclipse_tahu_protobuf_Payload_Metric_int_value_tag,
+            .has_datatype = true,
+        }
+    };
 
-    Metrics *array_metrics[3] = {device->DCMD, device->DDATA, device->Properties};
+
+    Metrics *array_metrics[4] = {device->DCMD, device->DDATA, device->Properties, &bdseq};
     Stack_Metrics_ptrs stack_metrics = (Stack_Metrics_ptrs){
-        .Count = 3,
+        .Count = 4,
         .Mul_Metrics_ptrs = array_metrics,
     };
 
@@ -183,7 +220,7 @@ bool Create_N_Encode_Device(){
         .metrics.funcs.encode = &encode_multiple_metrics_ptr,
         .has_timestamp = 1,
         .timestamp = now,
-        .seq = 1,
+        .seq = node->seq++,
         .has_seq = 1,
     };
 
@@ -212,7 +249,7 @@ void Create_N_Encode_NDATA(){
         .metrics.funcs.encode = &encode_metrics,
         .has_timestamp = 1,
         .timestamp = now,
-        .seq = 2,
+        .seq = node->seq++,
         .has_seq = 1,
     };
 
@@ -240,14 +277,92 @@ void Create_N_Encode_DDATA(){
         .metrics.funcs.encode = &encode_metrics,
         .has_timestamp = 1,
         .timestamp = now,
-        .seq = 2,
+        .seq = node->seq++,
         .has_seq = 1,
     };
 
 
     printf("encode payload: %d\n", encode_payload(&ddata, &payload));
 
-    ESP_LOGE(PB_ENCODE, "Encoded  %zu -> %zu bytes", sizeof(*device->DDATA->metrics), ddata.encoded_length);
+    ESP_LOGE(PB_ENCODE, "DDATA  %zu -> %zu bytes", sizeof(*device->DDATA->metrics), ddata.encoded_length);
+}
+
+bool Create_N_Encode_DDEATH(){
+    if(!node || !device) return false;
+
+    // get timestamp
+    time_t now;
+    time(&now);
+
+    Metrics *dd = &(Metrics){
+        .capacity = 1,
+        .used = 1,
+        .metrics = &(sparkplug_payload_metric){
+            .is_null = false,
+            .has_timestamp = true,
+            .timestamp = now,
+            .datatype = org_eclipse_tahu_protobuf_DataType_UInt32,
+            .value.int_value = device->bdseq++,
+            .name.arg = "bdSeq",
+            .name.funcs.encode = &encode_string,
+            .which_value = org_eclipse_tahu_protobuf_Payload_Metric_int_value_tag,
+            .has_datatype = true,
+        }
+    };
+    
+    sparkplug_payload payload = {
+        .metrics.arg = &dd,
+        .metrics.funcs.encode = &encode_metrics,
+        .has_timestamp = 1,
+        .timestamp = now,
+        .seq = node->seq++,
+        .has_seq = 1,
+    };
+
+    printf("encode payload: %d\n", encode_payload(&ddeath, &payload));
+
+    ESP_LOGE(PB_ENCODE, "DDEATH  %zu -> %zu bytes", sizeof(*dd->metrics), ddeath.encoded_length);
+    
+    return true;
+}
+
+bool Create_N_Encode_NDEATH(){
+    // check validity of node
+    if(!node) return false;
+
+    time_t now;
+    time(&now);
+    
+    Metrics *nd = &(Metrics){
+        .capacity = 1,
+        .used = 1,
+        .metrics = &(sparkplug_payload_metric){
+            .is_null = false,
+            .has_timestamp = true,
+            .timestamp = now,
+            .datatype = org_eclipse_tahu_protobuf_DataType_UInt32,
+            .value.int_value = node->bdseq++,
+            .name.arg = "bdSeq",
+            .name.funcs.encode = &encode_string,
+            .which_value = org_eclipse_tahu_protobuf_Payload_Metric_int_value_tag,
+            .has_datatype = true,
+        }
+    };
+
+    sparkplug_payload payload = {
+        .metrics.arg = &nd,
+        .metrics.funcs.encode = &encode_metrics,
+        .has_timestamp = 1,
+        .timestamp = now,
+        .seq = node->seq++,
+        .has_seq = 1,
+    };
+
+    printf("encode payload: %d\n", encode_payload(&ndeath, &payload));
+
+    ESP_LOGE(PB_ENCODE, "Encoded  %zu -> %zu bytes", sizeof(*nd->metrics), ndeath.encoded_length);
+
+    return true;
 }
 
 void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
@@ -261,6 +376,8 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
             esp_mqtt_client_publish(client, device->Topic_DBIRTH, (const char*)dbirth.buffer, dbirth.encoded_length, 1, 0);
             esp_mqtt_client_publish(client, node->Topic_NDATA, (const char*)ndata.buffer, ndata.encoded_length, 1, 0);
             esp_mqtt_client_publish(client, device->Topic_DDATA, (const char*)ddata.buffer, ddata.encoded_length, 1, 0);
+            esp_mqtt_client_publish(client, device->Topic_DDEATH, (const char*)ddeath.buffer, ddeath.encoded_length, 1, 0);
+            esp_mqtt_client_publish(client, node->Topic_NDEATH, (const char*)ndeath.buffer, ndeath.encoded_length, 1, 0);
             free_node(node);
 
             break;
@@ -278,6 +395,7 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
     }
 }
 
+
 void wifi_on_connected_handle(void* event_data){
     sntp_service_init(&ntp);
 
@@ -286,6 +404,8 @@ void wifi_on_connected_handle(void* event_data){
 
     Create_N_Encode_NDATA();
     Create_N_Encode_DDATA();
+    ESP_LOGI("ENCODE", "%d", Create_N_Encode_DDEATH());
+    ESP_LOGI("ENCODE", "%d", Create_N_Encode_NDEATH());
 
     mqtt_init();
 }

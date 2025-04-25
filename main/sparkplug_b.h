@@ -67,6 +67,7 @@ typedef struct{
  * Description.
  */
 typedef struct {
+    uint8_t bdseq;
     const char* deviceID;
 
     char* Topic_DBIRTH;
@@ -80,7 +81,6 @@ typedef struct {
     Metrics *DCMD;
     Metrics *DDATA;
     Metrics *Properties;
-    Metrics *DDEATH;
 } Sparkplug_Device;
 
 /* Help node keep track how many devices it associated with */
@@ -111,7 +111,6 @@ typedef struct {
     Stack_Metrics_ptrs *NBIRTH; // NBIRTH is consist of NDATA, NCMD, and Properties
     Metrics *NDATA;
     Metrics *NCMD;
-    Metrics *NDEATH;
     Metrics *Properties;
 
     Device_Manager_t *Device_Manager;

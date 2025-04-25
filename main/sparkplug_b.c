@@ -29,7 +29,7 @@ bool encode_string(pb_ostream_t *stream, const pb_field_t *field, void * const *
 bool encode_metrics(pb_ostream_t *stream, const pb_field_t *field, void * const *arg){
     Metrics *metrics = *(Metrics**)*arg;
 
-    // printf("merics %s %d\n", (char*)metrics->metrics->name.arg, metrics->used);
+    printf("merics %s %d\n", (char*)metrics->metrics->name.arg, metrics->used);
 
     if(!metrics) return false;
 
@@ -422,7 +422,6 @@ void free_device(Sparkplug_Device *d){
     if(d->DCMD) {free_metrics(d->DCMD); d->DCMD = NULL; printf("free 1\n");}
     if(d->DDATA) {free_metrics(d->DDATA); d->DDATA = NULL; printf("free 2\n");}
     if(d->Properties) {free_metrics(d->Properties); d->Properties = NULL; printf("free 4\n");}
-    if(d->DDEATH) {free_metrics(d->DDEATH); d->DDEATH = NULL; printf("free 3\n");}
 
 
     // free allocated string
@@ -459,7 +458,6 @@ void free_node(Sparkplug_Node *n){
     // free all metrics
     if(n->NCMD) {free_metrics(n->NCMD); n->NCMD = NULL; printf("free 1\n");}
     if(n->NDATA) {free_metrics(n->NDATA); n->NDATA = NULL; printf("free 2\n");}
-    if(n->NDEATH) {free_metrics(n->NDEATH); n->NDEATH = NULL; printf("free 3\n");}
     if(n->Properties) {free_metrics(n->Properties); n->Properties = NULL; printf("free 4\n");}
 
     // free all topics
