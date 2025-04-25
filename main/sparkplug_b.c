@@ -27,18 +27,20 @@ bool encode_string(pb_ostream_t *stream, const pb_field_t *field, void * const *
 }
 
 bool encode_metrics(pb_ostream_t *stream, const pb_field_t *field, void * const *arg){
-    Metrics *metrics = (Metrics*)*arg;
+    Metrics *metrics = *(Metrics**)*arg;
 
     // printf("merics %s %d\n", (char*)metrics->metrics->name.arg, metrics->used);
+
+    if(!metrics) return false;
 
     for (int i=0; i<metrics->used; i++)
     {
         if (!pb_encode_tag_for_field(stream, field)) return false;
 
-
         if(!pb_encode_submessage(stream, org_eclipse_tahu_protobuf_Payload_Metric_fields, &metrics->metrics[i])){
             return false;
         }
+
     }
     return true;
 }
@@ -434,26 +436,38 @@ void free_device(Sparkplug_Device *d){
 }
 
 void free_device_manager(Device_Manager_t *dm){
+    // check validity
+    if(!dm) return;
+
+    // free all used item
     for(int i=0; i < dm->used; i++){
         free(dm->devices[i]);
         dm->devices[i] = NULL;
     }
+    
+    // free the device manager itself
     free(dm);
 }
 
+// free the entire node including all metrics, devices, and topic strings.
 void free_node(Sparkplug_Node *n){
     if(!n) return;
+
+    // free NBIRTH
     if(n->NBIRTH) {free_Stack_Metrics_ptrs(n->NBIRTH); n->NBIRTH = NULL; printf("free 0\n");}
 
+    // free all metrics
     if(n->NCMD) {free_metrics(n->NCMD); n->NCMD = NULL; printf("free 1\n");}
     if(n->NDATA) {free_metrics(n->NDATA); n->NDATA = NULL; printf("free 2\n");}
     if(n->NDEATH) {free_metrics(n->NDEATH); n->NDEATH = NULL; printf("free 3\n");}
     if(n->Properties) {free_metrics(n->Properties); n->Properties = NULL; printf("free 4\n");}
 
+    // free all topics
     if(n->Topic_NBIRTH) {free(n->Topic_NBIRTH); n->Topic_NBIRTH=NULL;}
     if(n->Topic_NDATA)  {free(n->Topic_NDATA);  n->Topic_NDATA=NULL;}
     if(n->Topic_NCMD)   {free(n->Topic_NCMD);   n->Topic_NCMD=NULL;}
     if(n->Topic_NDEATH) {free(n->Topic_NDEATH); n->Topic_NDEATH=NULL;}
 
+    // free all devices
     if(n->Device_Manager) free_device_manager(n->Device_Manager);
 }
